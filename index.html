@@ -1,128 +1,128 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Scratch-to-Video Generator</title>
-    <style>
-        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background: #f0f2f5; padding: 20px; }
-        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; }
-        #canvasContainer { position: relative; margin: 20px 0; border: 2px solid #ddd; display: none; }
-        canvas { display: block; max-width: 100%; height: auto; }
-        .controls { margin-top: 20px; gap: 10px; display: flex; justify-content: center; }
-        button { padding: 10px 20px; cursor: pointer; border: none; border-radius: 5px; background: #007bff; color: white; font-weight: bold; }
-        button:disabled { background: #ccc; }
-        #downloadLink { display: none; margin-top: 15px; color: #28a745; font-weight: bold; text-decoration: none; }
-    </style>
+  <meta charset="UTF-8">
+  <title>Multi-Style Image Reveal with Preview & Speed Control</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; }
+    canvas { border: 1px solid black; margin-top: 10px; }
+    button, select { margin: 10px; padding: 8px 16px; }
+  </style>
 </head>
 <body>
+  <h2>Upload Image & Choose Reveal Style</h2>
+  <input type="file" id="upload" accept="image/*">
+  <br>
+  <label for="style">Reveal Style:</label>
+  <select id="style">
+    <option value="horizontal">Horizontal Wipe</option>
+    <option value="vertical">Vertical Wipe</option>
+    <option value="diagonal">Diagonal Wipe</option>
+    <option value="radial">Radial Reveal</option>
+  </select>
+  <br>
+  <label for="speed">Reveal Speed:</label>
+  <select id="speed">
+    <option value="2">Slow</option>
+    <option value="5" selected>Medium</option>
+    <option value="10">Fast</option>
+  </select>
+  <br>
+  <canvas id="canvas" width="600" height="400"></canvas>
+  <br>
+  <button id="preview">Preview Animation</button>
+  <button id="record">Start Recording</button>
 
-<div class="container">
-    <h2>Scratch Reveal Video Maker</h2>
-    <input type="file" id="imageLoader" accept="image/*">
-    
-    <div id="canvasContainer">
-        <canvas id="mainCanvas"></canvas>
-    </div>
-
-    <div class="controls">
-        <button id="startBtn" disabled>Create Video</button>
-    </div>
-    <a id="downloadLink">Download Video</a>
-</div>
-
-<script>
-    const imageLoader = document.getElementById('imageLoader');
-    const canvas = document.getElementById('mainCanvas');
+  <script>
+    const upload = document.getElementById('upload');
+    const styleSelect = document.getElementById('style');
+    const speedSelect = document.getElementById('speed');
+    const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const startBtn = document.getElementById('startBtn');
-    const downloadLink = document.getElementById('downloadLink');
-    let originalImage = new Image();
-    let recorder;
-    let chunks = [];
+    let img = new Image();
 
-    // 1. Load the Image
-    imageLoader.onchange = function(e) {
-        const reader = new FileReader();
-        reader.onload = function(event) {
-            originalImage.onload = function() {
-                setupCanvas();
-                document.getElementById('canvasContainer').style.display = 'block';
-                startBtn.disabled = false;
-            }
-            originalImage.src = event.target.result;
-        }
-        reader.readAsDataURL(e.target.files[0]);
-    };
-
-    function setupCanvas() {
-        canvas.width = originalImage.width;
-        canvas.height = originalImage.height;
-        resetCanvas();
-    }
-
-    function resetCanvas() {
-        // Draw the base image
-        ctx.drawImage(originalImage, 0, 0);
-        // Draw the "scratch" layer on a second temporary canvas or just use a state
-        // For video simplicity, we will draw the image, then a cover, then erase the cover.
-        ctx.fillStyle = "#888"; // Gray scratch surface
+    upload.onchange = e => {
+      const file = e.target.files[0];
+      img.src = URL.createObjectURL(file);
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "gray";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-
-    // 2. The Scratch Animation & Recording
-    startBtn.onclick = async function() {
-        startBtn.disabled = true;
-        resetCanvas();
-        chunks = [];
-        
-        // Setup MediaRecorder
-        const stream = canvas.captureStream(30); // 30 FPS
-        recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
-        recorder.ondataavailable = e => chunks.push(e.data);
-        recorder.onstop = () => {
-            const blob = new Blob(chunks, { type: 'video/webm' });
-            downloadLink.href = URL.createObjectURL(blob);
-            downloadLink.download = 'scratch_reveal.webm';
-            downloadLink.style.display = 'block';
-            downloadLink.innerText = "Download Video Ready!";
-            startBtn.disabled = false;
-        };
-
-        recorder.start();
-        await animateScratch();
-        recorder.stop();
+      };
     };
 
-    function animateScratch() {
-        return new Promise((resolve) => {
-            let x = 0;
-            let y = 0;
-            let step = canvas.width / 20; // Size of "scratch"
-            
-            function drawFrame() {
-                // IMPORTANT: destination-out makes the brush erase
-                ctx.globalCompositeOperation = 'destination-out';
-                ctx.beginPath();
-                ctx.arc(x, y, step * 1.5, 0, Math.PI * 2);
-                ctx.fill();
-                
-                // Logic to move the "scratch" across the screen
-                x += step;
-                if (x > canvas.width) {
-                    x = 0;
-                    y += step;
-                }
+    let progress = 0;
+    function animateReveal(style, speed, callback) {
+      ctx.save();
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "gray";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-                if (y <= canvas.height) {
-                    requestAnimationFrame(drawFrame);
-                } else {
-                    ctx.globalCompositeOperation = 'source-over'; // Reset
-                    resolve();
-                }
-            }
-            drawFrame();
-        });
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = "black";
+
+      if (style === "horizontal") {
+        ctx.fillRect(0, 0, progress, canvas.height);
+      } else if (style === "vertical") {
+        ctx.fillRect(0, 0, canvas.width, progress);
+      } else if (style === "diagonal") {
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(progress, 0);
+        ctx.lineTo(0, progress);
+        ctx.closePath();
+        ctx.fill();
+      } else if (style === "radial") {
+        ctx.beginPath();
+        ctx.arc(canvas.width/2, canvas.height/2, progress, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.restore();
+
+      progress += speed;
+      let limit = (style === "horizontal") ? canvas.width :
+                  (style === "vertical") ? canvas.height :
+                  (style === "diagonal") ? Math.max(canvas.width, canvas.height) :
+                  Math.max(canvas.width, canvas.height);
+
+      if (progress <= limit) {
+        requestAnimationFrame(() => animateReveal(style, speed, callback));
+      } else if (callback) {
+        callback();
+      }
     }
-</script>
+
+    // Preview-only mode
+    document.getElementById('preview').onclick = () => {
+      progress = 0;
+      const style = styleSelect.value;
+      const speed = parseInt(speedSelect.value);
+      animateReveal(style, speed, null);
+    };
+
+    // Recording mode
+    document.getElementById('record').onclick = () => {
+      const stream = canvas.captureStream(30); // 30 fps
+      const recorder = new MediaRecorder(stream);
+      let chunks = [];
+
+      recorder.ondataavailable = e => chunks.push(e.data);
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'reveal_effect.webm';
+        a.click();
+      };
+
+      recorder.start();
+      progress = 0;
+      const style = styleSelect.value;
+      const speed = parseInt(speedSelect.value);
+      animateReveal(style, speed, () => recorder.stop());
+    };
+  </script>
 </body>
 </html>
