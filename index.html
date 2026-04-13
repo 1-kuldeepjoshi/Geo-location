@@ -1,155 +1,128 @@
-<!doctype html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Globe Zoom with Boundaries</title>
-  <style>
-    html,body { height:100%; margin:0; background:#000; color:#fff; font-family:Arial; }
-    #ui { position:absolute; left:10px; top:10px; z-index:2; }
-    input,button{ padding:8px; margin:2px; }
-    canvas{ display:block; }
-  </style>
+    <meta charset="UTF-8">
+    <title>Scratch-to-Video Generator</title>
+    <style>
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background: #f0f2f5; padding: 20px; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; }
+        #canvasContainer { position: relative; margin: 20px 0; border: 2px solid #ddd; display: none; }
+        canvas { display: block; max-width: 100%; height: auto; }
+        .controls { margin-top: 20px; gap: 10px; display: flex; justify-content: center; }
+        button { padding: 10px 20px; cursor: pointer; border: none; border-radius: 5px; background: #007bff; color: white; font-weight: bold; }
+        button:disabled { background: #ccc; }
+        #downloadLink { display: none; margin-top: 15px; color: #28a745; font-weight: bold; text-decoration: none; }
+    </style>
 </head>
 <body>
-  <div id="ui">
-    <input id="city" placeholder="Enter city (e.g., Jaipur)" />
-    <button id="go">Zoom</button>
-    <button id="download">Download Video</button>
-  </div>
-  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
-  <script src="https://unpkg.com/d3-geo@3"></script>
-  <script>
-  const scene = new THREE.Scene();
-  const renderer = new THREE.WebGLRenderer({antialias:true});
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  document.body.appendChild(renderer.domElement);
 
-  const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 2000);
-  camera.position.set(0, 0, 400);
-  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+<div class="container">
+    <h2>Scratch Reveal Video Maker</h2>
+    <input type="file" id="imageLoader" accept="image/*">
+    
+    <div id="canvasContainer">
+        <canvas id="mainCanvas"></canvas>
+    </div>
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-  const dir = new THREE.DirectionalLight(0xffffff, 0.6);
-  dir.position.set(5,3,5);
-  scene.add(dir);
+    <div class="controls">
+        <button id="startBtn" disabled>Create Video</button>
+    </div>
+    <a id="downloadLink">Download Video</a>
+</div>
 
-  const R = 100;
-  const loader = new THREE.TextureLoader();
-  const earthTex = loader.load('https://threejs.org/examples/textures/earth_atmos_2048.jpg');
-  const earth = new THREE.Mesh(
-    new THREE.SphereGeometry(R, 64, 64),
-    new THREE.MeshPhongMaterial({ map: earthTex })
-  );
-  scene.add(earth);
+<script>
+    const imageLoader = document.getElementById('imageLoader');
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas.getContext('2d');
+    const startBtn = document.getElementById('startBtn');
+    const downloadLink = document.getElementById('downloadLink');
+    let originalImage = new Image();
+    let recorder;
+    let chunks = [];
 
-  function latLonToVector3(lat, lon, radius){
-    const phi = (90 - lat) * Math.PI/180;
-    const theta = (lon + 180) * Math.PI/180;
-    const x = - (radius) * Math.sin(phi) * Math.cos(theta);
-    const z = (radius) * Math.sin(phi) * Math.sin(theta);
-    const y = (radius) * Math.cos(phi);
-    return new THREE.Vector3(x,y,z);
-  }
-
-  // Draw GeoJSON boundaries on globe
-  async function drawBoundaries(url, color=0xff0000){
-    const res = await fetch(url);
-    const geojson = await res.json();
-    const lineMat = new THREE.LineBasicMaterial({ color });
-    geojson.features.forEach(f=>{
-      const coords = f.geometry.coordinates;
-      const type = f.geometry.type;
-      if(type==="Polygon") coords.forEach(ring=>drawRing(ring));
-      else if(type==="MultiPolygon") coords.forEach(poly=>poly.forEach(ring=>drawRing(ring)));
-    });
-    function drawRing(ring){
-      const pts = ring.map(([lon,lat])=>latLonToVector3(lat,lon,R+0.2));
-      const geom = new THREE.BufferGeometry().setFromPoints(pts);
-      const line = new THREE.LineLoop(geom,lineMat);
-      scene.add(line);
-    }
-  }
-
-  // Example: India states boundaries (replace with actual hosted GeoJSON URL)
-  drawBoundaries("india_states.geojson", 0x00ff00);
-
-  // Geocode city
-  async function geocode(q){
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if(!data[0]) throw new Error("Not found");
-    return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
-  }
-
-  // Fetch city boundary polygon
-  async function fetchCityBoundary(q){
-    const url = `https://nominatim.openstreetmap.org/search?format=geojson&polygon_geojson=1&q=${encodeURIComponent(q)}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if(!data.features[0]) return;
-    const f = data.features[0];
-    const coords = f.geometry.coordinates;
-    const lineMat = new THREE.LineBasicMaterial({ color:0xffff00 });
-    if(f.geometry.type==="Polygon") coords.forEach(ring=>drawRing(ring));
-    else if(f.geometry.type==="MultiPolygon") coords.forEach(poly=>poly.forEach(ring=>drawRing(ring)));
-    function drawRing(ring){
-      const pts = ring.map(([lon,lat])=>latLonToVector3(lat,lon,R+0.5));
-      const geom = new THREE.BufferGeometry().setFromPoints(pts);
-      const line = new THREE.LineLoop(geom,lineMat);
-      scene.add(line);
-    }
-  }
-
-  function animateTo(lat, lon){
-    const target = latLonToVector3(lat, lon, R+1);
-    const endPos = target.clone().multiplyScalar(4);
-    const endLook = target.clone();
-    const startPos = camera.position.clone();
-    const startLook = controls.target.clone();
-    const duration = 2000;
-    const t0 = performance.now();
-    function step(t){
-      const u = Math.min(1,(t-t0)/duration);
-      const ease = (--u)*u*u+1;
-      camera.position.lerpVectors(startPos,endPos,ease);
-      controls.target.lerpVectors(startLook,endLook,ease);
-      controls.update();
-      renderer.render(scene,camera);
-      if(performance.now()-t0<duration) requestAnimationFrame(step);
-    }
-    requestAnimationFrame(step);
-  }
-
-  document.getElementById('go').onclick = async ()=>{
-    const q = document.getElementById('city').value;
-    if(!q) return;
-    const {lat,lon} = await geocode(q);
-    await fetchCityBoundary(q);
-    animateTo(lat,lon);
-  };
-
-  // MediaRecorder for download
-  let recorder, chunks=[];
-  document.getElementById('download').onclick = ()=>{
-    if(recorder && recorder.state==="recording"){ recorder.stop(); return; }
-    chunks=[];
-    const stream = renderer.domElement.captureStream(30);
-    recorder = new MediaRecorder(stream,{mimeType:'video/webm'});
-    recorder.ondataavailable = e=>chunks.push(e.data);
-    recorder.onstop = ()=>{
-      const blob = new Blob(chunks,{type:'video/webm'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href=url; a.download="zoom_animation.webm"; a.click();
+    // 1. Load the Image
+    imageLoader.onchange = function(e) {
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            originalImage.onload = function() {
+                setupCanvas();
+                document.getElementById('canvasContainer').style.display = 'block';
+                startBtn.disabled = false;
+            }
+            originalImage.src = event.target.result;
+        }
+        reader.readAsDataURL(e.target.files[0]);
     };
-    recorder.start();
-    setTimeout(()=>recorder.stop(),5000); // record 5s demo
-  };
 
-  function loop(){ requestAnimationFrame(loop); earth.rotation.y+=0.0005; controls.update(); renderer.render(scene,camera); }
-  loop();
-  </script>
+    function setupCanvas() {
+        canvas.width = originalImage.width;
+        canvas.height = originalImage.height;
+        resetCanvas();
+    }
+
+    function resetCanvas() {
+        // Draw the base image
+        ctx.drawImage(originalImage, 0, 0);
+        // Draw the "scratch" layer on a second temporary canvas or just use a state
+        // For video simplicity, we will draw the image, then a cover, then erase the cover.
+        ctx.fillStyle = "#888"; // Gray scratch surface
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // 2. The Scratch Animation & Recording
+    startBtn.onclick = async function() {
+        startBtn.disabled = true;
+        resetCanvas();
+        chunks = [];
+        
+        // Setup MediaRecorder
+        const stream = canvas.captureStream(30); // 30 FPS
+        recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+        recorder.ondataavailable = e => chunks.push(e.data);
+        recorder.onstop = () => {
+            const blob = new Blob(chunks, { type: 'video/webm' });
+            downloadLink.href = URL.createObjectURL(blob);
+            downloadLink.download = 'scratch_reveal.webm';
+            downloadLink.style.display = 'block';
+            downloadLink.innerText = "Download Video Ready!";
+            startBtn.disabled = false;
+        };
+
+        recorder.start();
+        await animateScratch();
+        recorder.stop();
+    };
+
+    function animateScratch() {
+        return new Promise((resolve) => {
+            let x = 0;
+            let y = 0;
+            let step = canvas.width / 20; // Size of "scratch"
+            
+            function drawFrame() {
+                // IMPORTANT: destination-out makes the brush erase
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.beginPath();
+                ctx.arc(x, y, step * 1.5, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Logic to move the "scratch" across the screen
+                x += step;
+                if (x > canvas.width) {
+                    x = 0;
+                    y += step;
+                }
+
+                if (y <= canvas.height) {
+                    requestAnimationFrame(drawFrame);
+                } else {
+                    ctx.globalCompositeOperation = 'source-over'; // Reset
+                    resolve();
+                }
+            }
+            drawFrame();
+        });
+    }
+</script>
 </body>
 </html>
